@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="Cache-Control" "no-transform " />
+    <link rel="alternate" type="application/vnd.wap.xhtml+xml" media="handheld" href="target" />
+    <meta http-equiv="Cache-Control" content="no-transform" />
+    <meta http-equiv="Cache-Control" content="no-siteapp" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-touch-fullscreen" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="full-screen" content="yes">
+    <meta name="browsermode" content="application">
+    <meta name="x5-fullscreen" content="true">
+    <meta name="x5-page-mode" content="app">
+    <title>弹幕播放器</title>
+    <link rel="stylesheet" href="dplayer/css/yzmplayer.css">
+    <style>html,body{background-color:#000;}#ADtip img{position:absolute;z-index:9999;top:50%;left:50%;border-radius:5px;-webkit-transform:translate(-50%,-50%);-moz-transform:translate(-50%,-50%);transform:translate(-50%,-50%);max-width:80%;max-height:80%;}.yzmplayer-full-icon span svg,.yzmplayer-playlist-icon span svg,.yzmplayer-fulloff-icon span svg{display:none;}.yzmplayer-full-icon span,.yzmplayer-playlist-icon span,.yzmplayer-fulloff-icon span{background-size:contain !important;float:left;width:22px;height:22px;}.yzmplayer-playlist-icon span{background:url(dplayer/img/playlist.png) center no-repeat;}.yzmplayer-full-icon span{background:url(dplayer/img/5eca627664041.png) center no-repeat;}.yzmplayer-fulloff-icon span{background:url(dplayer/img/5eca6278b7137.webp) center no-repeat;}.layui-layer-dialog{text-align:center;font-size:16px;padding-bottom:10px;}.layui-layer-btn.layui-layer-btn-{padding:15px 5px !important;text-align:center;}.layui-layer-btn a{font-size:12px;padding:0 11px !important;}.layui-layer-btn a:hover{border-color:#00a1d6 !important;background-color:#00a1d6 !important;color:#fff !important;}.yzmplayer-controller .yzmplayer-icons .yzmplayer-toggle input+label.checked:after{left:17px;}.yzmplayer-setting-jlast:hover #jumptime,.yzmplayer-setting-jfrist:hover #fristtime{display:block;outline-style:none}#player_pause .tip{color:#f4f4f4;position:absolute;font-size:14px;background-color:hsla(0,0%,0%,0.42);padding:4px 8px;margin:4px;border-radius:3px;right:0;}#player_pause .adimg{color:#f4f4f4;position:absolute;font-size:14px;background-color:hsla(0,0%,0%,0.42);padding:2px 4px;margin:4px;bottom:0px;}#player_pause{position:absolute;z-index:9999;top:50%;left:50%;border-radius:5px;-webkit-transform:translate(-50%,-50%);-moz-transform:translate(-50%,-50%);transform:translate(-50%,-50%);max-width:80%;max-height:80%;}#player_pause img{width:100%;height:100%;}#jumptime::-webkit-input-placeholder,#fristtime::-webkit-input-placeholder{color:#ddd;opacity:.5;border:0;}#jumptime::-moz-placeholder{color:#ddd;}#jumptime:-ms-input-placeholder{color:#ddd;}#jumptime,#fristtime{width:50px;border:0;background-color:#414141;font-size:12px;padding:3px 3px 3px 3px;margin:2px;border-radius:12px;color:#fff;position:absolute;left:5px;top:3px;display:none;text-align:center;}#link{position:absolute;top:20px;right:15px;border-radius:10px;padding:1px 5px;background:rgba(153,153,153,0.7);color:white;font-size:14px;cursor:pointer;}#close c{float:left;display:none;}.dmlink,.playlink,.palycon{float:left;width:400px;}#link3-error{display:none;}#stats{display:none;right:10px;text-align:center;top:5px;font-size:12px;color:#fdfdfd;text-shadow:1px 1px 1px #000,1px 1px 1px #000;position:fixed;z-index:2147483645;}.yzmplayer-watching-title{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;-o-text-overflow:ellipsis;text-decoration:none;}.flaglist-show li:hover,.playlist-show li:hover{background-color:#2693FF;}
+	</style>
+    <script src="dplayer/js/yzmplayer.js"></script>
+    <script src="dplayer/js/jquery.min.js"></script>
+    <script src="dplayer/js/jquery.md5.js"></script>
+    <script src="dplayer/js/setting.js"></script>
+	<script src="dplayer/js/hls.min.js"></script>
+	<script src="dplayer/js/flv.min.js"></script>
+    <script src="dplayer/js/layer.js"></script>
+    <script src="dplayer/js/parse.js"></script>
+</head>
+<body> 
+    <div id="player"></div>
+    <div id="ADplayer"></div>
+    <div id="ADtip"></div>
+    <script>
+		// 初始化VIP解析器
+		VipParser.init({
+			api_url: '../cj/dplayer/',
+			show_progress: true
+		});
+
+		// 获取视频URL和相关参数
+		var videoUrl, id, next;
+		if(typeof(parent.MacPlayer) !='undefined'){
+			videoUrl = parent.MacPlayer.PlayUrl;
+			id = $.md5(parent.MacPlayer.Id + '-' + parent.MacPlayer.Sid + '-' + parent.MacPlayer.Nid);
+			next = parent.MacPlayer.PlayLinkNext;
+		}
+
+		var up = { "usernum": '0'}
+        var config = {
+            "api": '../cj/dplayer/',
+            "url": videoUrl,
+            "id": id,
+            "pic": "",
+            "next": next,
+            "live":0,
+        };
+
+        // 检查是否为VIP视频链接，如果是则先解析
+        if (videoUrl && VipParser.isVipUrl(videoUrl)) {
+        	console.log('检测到VIP视频链接，开始解析: ' + videoUrl);
+
+        	VipParser.showParseDialog(videoUrl,
+        		function(result) {
+        			// 解析成功，使用解析后的直链
+        			console.log('VIP视频解析成功: ' + result.parsed_url);
+        			config.url = result.parsed_url;
+
+        			// 显示解析成功提示
+        			layer.msg('VIP视频解析成功！', {icon: 1, time: 2000});
+
+        			// 启动播放器
+        			YZM.start();
+        		},
+        		function(error) {
+        			// 解析失败，显示错误信息
+        			console.error('VIP视频解析失败: ' + error);
+        			layer.alert('VIP视频解析失败: ' + error + '<br><br>请检查视频链接是否正确，或稍后重试。', {
+        				icon: 2,
+        				title: '解析失败'
+        			});
+        		}
+        	);
+        } else {
+        	// 非VIP链接或无视频链接，直接启动播放器
+        	YZM.start();
+        }
+    </script>
+</body>
+</html>
