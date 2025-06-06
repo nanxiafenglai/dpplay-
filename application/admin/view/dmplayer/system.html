@@ -330,6 +330,7 @@
                     </fieldset>
 
                     <div class="layui-form-item center">
+                        <button class="layui-btn layui-btn-primary" type="button" onclick="testSaveAPI()">测试API连接</button>
                         <button class="layui-btn" type="button" id="save-parse-config">保存解析配置</button>
                     </div>
                 </div>
@@ -808,10 +809,8 @@ layui.use(['form', 'laydate', 'laypage', 'table', 'layer', 'element', 'colorpick
 	}, function(e) {
 		$(".showpic").css("display", "none")
 	})
-});
-
-// VIP解析设置相关函数
-var parseConfig = {
+	// VIP解析设置相关函数
+	var parseConfig = {
 	enable: false,
 	timeout: 30,
 	retry_count: 3,
@@ -836,178 +835,317 @@ var parseConfig = {
 
 // 初始化解析设置
 function initParseSettings() {
-	loadParseConfig();
+	// 显示加载状态
+	layer.msg('正在加载VIP解析设置...', {icon: 16, time: 0});
+
+	// 先绑定事件，确保按钮可以点击
 	bindParseEvents();
+
+	// 然后加载配置
+	loadParseConfig();
+
+	// 最后刷新统计
 	refreshParseStats();
 }
 
 // 加载解析配置
 function loadParseConfig() {
 	// 从服务器加载配置
-	$.get(api + '?ac=parse_stats', function(response) {
-		if (response.code === 1 && response.data.config) {
-			parseConfig = response.data.config;
+	$.get(api + '?ac=parse_stats')
+		.done(function(response) {
+			layer.closeAll('loading');
+			if (response.code === 1 && response.data && response.data.config) {
+				parseConfig = response.data.config;
+				layer.msg('配置加载成功', {icon: 1, time: 1000});
+			} else {
+				layer.msg('配置加载失败，使用默认配置', {icon: 2, time: 2000});
+			}
 			updateParseUI();
-		}
-	});
+		})
+		.fail(function(xhr, status, error) {
+			layer.closeAll('loading');
+			layer.msg('无法连接到服务器，使用默认配置', {icon: 2, time: 3000});
+			console.error('API请求失败:', status, error);
+			updateParseUI();
+		});
 }
 
 // 更新解析UI
 function updateParseUI() {
-	$('#parse-enable').prop('checked', parseConfig.enable);
-	$('#parse-timeout').val(parseConfig.timeout);
-	$('#parse-retry').val(parseConfig.retry_count);
-	$('#parse-cache').val(parseConfig.cache_time);
-	$('#parse-log-level').val(parseConfig.log_level);
+	try {
+		// 确保配置对象存在且有效
+		if (!parseConfig || typeof parseConfig !== 'object') {
+			console.warn('解析配置无效，使用默认配置');
+			parseConfig = {
+				enable: false,
+				timeout: 30,
+				retry_count: 3,
+				cache_time: 3600,
+				log_level: 'info',
+				apis: [
+					'https://jiexi.789jiexi.net:4433/?url=',
+					'https://jx.jsonplayer.com/player/?url=',
+					'https://jx.parwix.com:4433/player/?url=',
+					'https://jx.blbo.cc:4433/?url='
+				],
+				vip_domains: [
+					'v.qq.com',
+					'www.iqiyi.com',
+					'v.youku.com',
+					'www.mgtv.com',
+					'tv.sohu.com',
+					'www.le.com',
+					'www.bilibili.com'
+				]
+			};
+		}
 
-	if (parseConfig.enable) {
-		$('#parse-settings').show();
-	}
+		// 更新表单元素
+		$('#parse-enable').prop('checked', parseConfig.enable || false);
+		$('#parse-timeout').val(parseConfig.timeout || 30);
+		$('#parse-retry').val(parseConfig.retry_count || 3);
+		$('#parse-cache').val(parseConfig.cache_time || 3600);
+		$('#parse-log-level').val(parseConfig.log_level || 'info');
 
-	renderApiList();
-	renderDomainList();
-	form.render();
-}
-
-// 渲染解析接口列表
-function renderApiList() {
-	var html = '';
-	parseConfig.apis.forEach(function(api, index) {
-		html += '<div class="layui-form-item api-item" data-index="' + index + '">';
-		html += '<div class="layui-input-inline" style="width: 400px;">';
-		html += '<input type="text" class="layui-input api-url" value="' + api + '" placeholder="解析接口URL">';
-		html += '</div>';
-		html += '<div class="layui-input-inline">';
-		html += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger remove-api">删除</button>';
-		html += '<button type="button" class="layui-btn layui-btn-sm layui-btn-normal test-api">测试</button>';
-		html += '</div>';
-		html += '</div>';
-	});
-	$('#parse-apis').html(html);
-}
-
-// 渲染VIP域名列表
-function renderDomainList() {
-	var html = '';
-	parseConfig.vip_domains.forEach(function(domain, index) {
-		html += '<div class="layui-form-item domain-item" data-index="' + index + '">';
-		html += '<div class="layui-input-inline" style="width: 300px;">';
-		html += '<input type="text" class="layui-input domain-name" value="' + domain + '" placeholder="VIP网站域名">';
-		html += '</div>';
-		html += '<div class="layui-input-inline">';
-		html += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger remove-domain">删除</button>';
-		html += '</div>';
-		html += '</div>';
-	});
-	$('#vip-domains').html(html);
-}
-
-// 绑定解析相关事件
-function bindParseEvents() {
-	// 解析功能开关
-	form.on('switch(parseStatus)', function(data) {
-		parseConfig.enable = data.elem.checked;
+		// 显示或隐藏设置区域
 		if (parseConfig.enable) {
 			$('#parse-settings').show();
 		} else {
 			$('#parse-settings').hide();
 		}
-	});
 
-	// 添加解析接口
-	$(document).on('click', '#add-parse-api', function() {
-		parseConfig.apis.push('');
+		// 渲染列表
 		renderApiList();
-	});
-
-	// 删除解析接口
-	$(document).on('click', '.remove-api', function() {
-		var index = $(this).closest('.api-item').data('index');
-		parseConfig.apis.splice(index, 1);
-		renderApiList();
-	});
-
-	// 测试解析接口
-	$(document).on('click', '.test-api', function() {
-		var index = $(this).closest('.api-item').data('index');
-		var api_url = parseConfig.apis[index];
-		testParseApi(api_url);
-	});
-
-	// 更新解析接口URL
-	$(document).on('input', '.api-url', function() {
-		var index = $(this).closest('.api-item').data('index');
-		parseConfig.apis[index] = $(this).val();
-	});
-
-	// 添加VIP域名
-	$(document).on('click', '#add-vip-domain', function() {
-		parseConfig.vip_domains.push('');
 		renderDomainList();
-	});
 
-	// 删除VIP域名
-	$(document).on('click', '.remove-domain', function() {
-		var index = $(this).closest('.domain-item').data('index');
-		parseConfig.vip_domains.splice(index, 1);
-		renderDomainList();
-	});
+		// 重新渲染表单
+		form.render();
 
-	// 更新VIP域名
-	$(document).on('input', '.domain-name', function() {
-		var index = $(this).closest('.domain-item').data('index');
-		parseConfig.vip_domains[index] = $(this).val();
-	});
+		console.log('VIP解析UI更新完成');
+	} catch (error) {
+		console.error('更新解析UI时发生错误:', error);
+		layer.msg('界面更新失败: ' + error.message, {icon: 2});
+	}
+}
 
-	// 刷新统计
-	$('#refresh-stats').click(function() {
-		refreshParseStats();
-	});
+// 渲染解析接口列表
+function renderApiList() {
+	try {
+		var html = '';
+		var apis = parseConfig.apis || [];
 
-	// 清理缓存
-	$('#clear-cache').click(function() {
-		layer.confirm('确定要清理所有解析缓存吗？', function(index) {
-			$.get(api + '?ac=clear_parse_cache', function(response) {
-				if (response.code === 1) {
-					layer.msg('缓存清理成功', {icon: 1});
-					refreshParseStats();
-				} else {
-					layer.msg('缓存清理失败: ' + response.message, {icon: 2});
-				}
+		if (apis.length === 0) {
+			html = '<div class="layui-form-item"><div class="layui-form-mid layui-word-aux">暂无解析接口，请点击"添加接口"按钮添加</div></div>';
+		} else {
+			apis.forEach(function(api, index) {
+				html += '<div class="layui-form-item api-item" data-index="' + index + '">';
+				html += '<div class="layui-input-inline" style="width: 400px;">';
+				html += '<input type="text" class="layui-input api-url" value="' + (api || '') + '" placeholder="解析接口URL">';
+				html += '</div>';
+				html += '<div class="layui-input-inline">';
+				html += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger remove-api">删除</button>';
+				html += '<button type="button" class="layui-btn layui-btn-sm layui-btn-normal test-api">测试</button>';
+				html += '</div>';
+				html += '</div>';
 			});
-			layer.close(index);
-		});
-	});
+		}
 
-	// 测试解析
-	$('#test-parse').click(function() {
-		layer.prompt({
-			title: '测试VIP视频解析',
-			formType: 2,
-			value: 'https://v.qq.com/x/cover/mzc00200mp8vo9b/n0041aa087e.html',
-			area: ['400px', '200px']
-		}, function(value, index) {
-			if (value) {
-				testParseVideo(value);
+		$('#parse-apis').html(html);
+		console.log('解析接口列表渲染完成，共' + apis.length + '个接口');
+	} catch (error) {
+		console.error('渲染解析接口列表时发生错误:', error);
+		$('#parse-apis').html('<div class="layui-form-item"><div class="layui-form-mid layui-word-aux" style="color: red;">接口列表加载失败</div></div>');
+	}
+}
+
+// 渲染VIP域名列表
+function renderDomainList() {
+	try {
+		var html = '';
+		var domains = parseConfig.vip_domains || [];
+
+		if (domains.length === 0) {
+			html = '<div class="layui-form-item"><div class="layui-form-mid layui-word-aux">暂无VIP域名，请点击"添加域名"按钮添加</div></div>';
+		} else {
+			domains.forEach(function(domain, index) {
+				html += '<div class="layui-form-item domain-item" data-index="' + index + '">';
+				html += '<div class="layui-input-inline" style="width: 300px;">';
+				html += '<input type="text" class="layui-input domain-name" value="' + (domain || '') + '" placeholder="VIP网站域名">';
+				html += '</div>';
+				html += '<div class="layui-input-inline">';
+				html += '<button type="button" class="layui-btn layui-btn-sm layui-btn-danger remove-domain">删除</button>';
+				html += '</div>';
+				html += '</div>';
+			});
+		}
+
+		$('#vip-domains').html(html);
+		console.log('VIP域名列表渲染完成，共' + domains.length + '个域名');
+	} catch (error) {
+		console.error('渲染VIP域名列表时发生错误:', error);
+		$('#vip-domains').html('<div class="layui-form-item"><div class="layui-form-mid layui-word-aux" style="color: red;">域名列表加载失败</div></div>');
+	}
+}
+
+// 绑定解析相关事件
+function bindParseEvents() {
+	console.log('开始绑定VIP解析事件...');
+
+	try {
+		// 解析功能开关
+		form.on('switch(parseStatus)', function(data) {
+			parseConfig.enable = data.elem.checked;
+			layer.msg('解析功能：' + (parseConfig.enable ? '已启用' : '已禁用'), {icon: 1, time: 1000});
+			if (parseConfig.enable) {
+				$('#parse-settings').show();
+			} else {
+				$('#parse-settings').hide();
 			}
-			layer.close(index);
 		});
-	});
 
-	// 保存解析配置
-	$('#save-parse-config').click(function() {
-		saveParseConfig();
-	});
+		// 添加解析接口
+		$(document).off('click', '#add-parse-api').on('click', '#add-parse-api', function() {
+			console.log('点击添加解析接口按钮');
+			if (!parseConfig.apis) {
+				parseConfig.apis = [];
+			}
+			parseConfig.apis.push('');
+			renderApiList();
+			layer.msg('已添加新的解析接口', {icon: 1, time: 1000});
+		});
+
+		// 删除解析接口
+		$(document).off('click', '.remove-api').on('click', '.remove-api', function() {
+			var index = $(this).closest('.api-item').data('index');
+			if (parseConfig.apis && index >= 0 && index < parseConfig.apis.length) {
+				parseConfig.apis.splice(index, 1);
+				renderApiList();
+				layer.msg('解析接口已删除', {icon: 1, time: 1000});
+			}
+		});
+
+		// 测试解析接口
+		$(document).off('click', '.test-api').on('click', '.test-api', function() {
+			var index = $(this).closest('.api-item').data('index');
+			if (parseConfig.apis && index >= 0 && index < parseConfig.apis.length) {
+				var api_url = parseConfig.apis[index];
+				testParseApi(api_url);
+			}
+		});
+
+		// 更新解析接口URL
+		$(document).off('input', '.api-url').on('input', '.api-url', function() {
+			var index = $(this).closest('.api-item').data('index');
+			if (parseConfig.apis && index >= 0 && index < parseConfig.apis.length) {
+				parseConfig.apis[index] = $(this).val();
+			}
+		});
+
+		// 添加VIP域名
+		$(document).off('click', '#add-vip-domain').on('click', '#add-vip-domain', function() {
+			console.log('点击添加VIP域名按钮');
+			if (!parseConfig.vip_domains) {
+				parseConfig.vip_domains = [];
+			}
+			parseConfig.vip_domains.push('');
+			renderDomainList();
+			layer.msg('已添加新的VIP域名', {icon: 1, time: 1000});
+		});
+
+		// 删除VIP域名
+		$(document).off('click', '.remove-domain').on('click', '.remove-domain', function() {
+			var index = $(this).closest('.domain-item').data('index');
+			if (parseConfig.vip_domains && index >= 0 && index < parseConfig.vip_domains.length) {
+				parseConfig.vip_domains.splice(index, 1);
+				renderDomainList();
+				layer.msg('VIP域名已删除', {icon: 1, time: 1000});
+			}
+		});
+
+		// 更新VIP域名
+		$(document).off('input', '.domain-name').on('input', '.domain-name', function() {
+			var index = $(this).closest('.domain-item').data('index');
+			if (parseConfig.vip_domains && index >= 0 && index < parseConfig.vip_domains.length) {
+				parseConfig.vip_domains[index] = $(this).val();
+			}
+		});
+
+		// 刷新统计
+		$('#refresh-stats').off('click').on('click', function() {
+			refreshParseStats();
+		});
+
+		// 清理缓存
+		$('#clear-cache').off('click').on('click', function() {
+			layer.confirm('确定要清理所有解析缓存吗？', function(index) {
+				$.get(api + '?ac=clear_parse_cache')
+					.done(function(response) {
+						if (response.code === 1) {
+							layer.msg('缓存清理成功', {icon: 1});
+							refreshParseStats();
+						} else {
+							layer.msg('缓存清理失败: ' + (response.message || '未知错误'), {icon: 2});
+						}
+					})
+					.fail(function() {
+						layer.msg('缓存清理失败: 网络错误', {icon: 2});
+					});
+				layer.close(index);
+			});
+		});
+
+		// 测试解析
+		$('#test-parse').off('click').on('click', function() {
+			layer.prompt({
+				title: '测试VIP视频解析',
+				formType: 2,
+				value: 'https://v.qq.com/x/cover/mzc00200mp8vo9b/n0041aa087e.html',
+				area: ['400px', '200px']
+			}, function(value, index) {
+				if (value) {
+					testParseVideo(value);
+				}
+				layer.close(index);
+			});
+		});
+
+		// 保存解析配置
+		$('#save-parse-config').off('click').on('click', function() {
+			saveParseConfig();
+		});
+
+		console.log('VIP解析事件绑定完成');
+	} catch (error) {
+		console.error('绑定解析事件时发生错误:', error);
+		layer.msg('事件绑定失败: ' + error.message, {icon: 2});
+	}
 }
 
 // 刷新解析统计
 function refreshParseStats() {
-	$.get(api + '?ac=parse_stats', function(response) {
-		if (response.code === 1 && response.data) {
-			$('#cache-count').text(response.data.cache_count || 0);
-			$('#log-size').text(formatFileSize(response.data.log_size || 0));
-		}
-	});
+	console.log('刷新解析统计...');
+
+	// 显示加载状态
+	$('#cache-count').text('加载中...');
+	$('#log-size').text('加载中...');
+
+	$.get(api + '?ac=parse_stats')
+		.done(function(response) {
+			if (response.code === 1 && response.data) {
+				$('#cache-count').text(response.data.cache_count || 0);
+				$('#log-size').text(formatFileSize(response.data.log_size || 0));
+				console.log('统计信息刷新成功');
+			} else {
+				$('#cache-count').text('获取失败');
+				$('#log-size').text('获取失败');
+				console.warn('统计信息获取失败:', response.message);
+			}
+		})
+		.fail(function(xhr, status, error) {
+			$('#cache-count').text('连接失败');
+			$('#log-size').text('连接失败');
+			console.error('统计信息请求失败:', status, error);
+		});
 }
 
 // 测试解析接口
@@ -1055,17 +1193,196 @@ function testParseVideo(video_url) {
 	});
 }
 
+// 测试API连接
+function testSaveAPI() {
+	console.log('开始测试API连接...');
+	layer.msg('正在测试API连接...', {icon: 16, time: 0});
+
+	$.ajax({
+		url: api + '?ac=test_save',
+		type: 'GET',
+		dataType: 'json',
+		timeout: 5000,
+		success: function(response) {
+			layer.closeAll('loading');
+			console.log('API测试响应:', response);
+			if (response.code === 1) {
+				layer.msg('API连接正常！', {icon: 1, time: 2000});
+			} else {
+				layer.msg('API测试失败: ' + response.message, {icon: 2, time: 3000});
+			}
+		},
+		error: function(xhr, status, error) {
+			layer.closeAll('loading');
+			console.error('API测试失败:', {status: status, error: error, xhr: xhr});
+			layer.msg('API连接失败: ' + status, {icon: 2, time: 3000});
+		}
+	});
+}
+
 // 保存解析配置
 function saveParseConfig() {
-	// 更新配置
-	parseConfig.timeout = parseInt($('#parse-timeout').val());
-	parseConfig.retry_count = parseInt($('#parse-retry').val());
-	parseConfig.cache_time = parseInt($('#parse-cache').val());
-	parseConfig.log_level = $('#parse-log-level').val();
+	try {
+		// 显示保存状态
+		layer.msg('正在保存配置...', {icon: 16, time: 0});
 
-	// 这里应该发送到后端保存配置
-	// 由于当前后端没有保存配置的接口，我们先用layer.msg提示
-	layer.msg('解析配置已保存（注意：需要后端支持配置保存功能）', {icon: 1});
+		// 更新配置对象
+		parseConfig.timeout = parseInt($('#parse-timeout').val()) || 30;
+		parseConfig.retry_count = parseInt($('#parse-retry').val()) || 3;
+		parseConfig.cache_time = parseInt($('#parse-cache').val()) || 3600;
+		parseConfig.log_level = $('#parse-log-level').val() || 'info';
+
+		// 调试信息：显示当前配置
+		console.log('准备保存的配置:', parseConfig);
+		console.log('API路径:', api);
+		console.log('完整请求URL:', api + '?ac=save_config');
+
+		// 验证配置数据
+		if (parseConfig.timeout < 5 || parseConfig.timeout > 300) {
+			layer.closeAll('loading');
+			layer.msg('超时时间必须在5-300秒之间', {icon: 2});
+			return;
+		}
+
+		if (parseConfig.retry_count < 0 || parseConfig.retry_count > 10) {
+			layer.closeAll('loading');
+			layer.msg('重试次数必须在0-10次之间', {icon: 2});
+			return;
+		}
+
+		if (parseConfig.cache_time < 0) {
+			layer.closeAll('loading');
+			layer.msg('缓存时间不能为负数', {icon: 2});
+			return;
+		}
+
+		// 验证必需的数组字段
+		if (!parseConfig.apis || !Array.isArray(parseConfig.apis)) {
+			parseConfig.apis = [];
+		}
+		if (!parseConfig.vip_domains || !Array.isArray(parseConfig.vip_domains)) {
+			parseConfig.vip_domains = [];
+		}
+
+		// 准备发送的数据
+		var requestData = {
+			config: parseConfig
+		};
+
+		console.log('发送的请求数据:', requestData);
+
+		// 先测试API连通性
+		console.log('测试API连通性...');
+		$.get(api + '?ac=parse_stats')
+			.done(function(testResponse) {
+				console.log('API连通性测试成功:', testResponse);
+				// API连通正常，继续保存配置
+				performSaveConfig(requestData);
+			})
+			.fail(function(xhr, status, error) {
+				layer.closeAll('loading');
+				console.error('API连通性测试失败:', {status: status, error: error, xhr: xhr});
+				layer.msg('API连接失败，请检查服务器配置', {icon: 2, time: 3000});
+			});
+
+	} catch (error) {
+		layer.closeAll('loading');
+		layer.msg('保存配置时发生错误: ' + error.message, {icon: 2});
+		console.error('保存配置异常:', error);
+	}
+}
+
+// 执行配置保存的具体逻辑
+function performSaveConfig(requestData) {
+	try {
+
+		// 发送保存请求到独立的保存接口
+		$.ajax({
+			url: api + 'save_config_direct.php',
+			type: 'POST',
+			contentType: 'application/json',
+			data: JSON.stringify(requestData),
+			dataType: 'json',
+			timeout: 15000,
+			beforeSend: function(xhr) {
+				console.log('发送AJAX请求...');
+			},
+			success: function(response, textStatus, xhr) {
+				console.log('收到服务器响应:', response);
+				console.log('响应状态:', textStatus);
+				console.log('HTTP状态码:', xhr.status);
+
+				layer.closeAll('loading');
+
+				if (response && response.code === 1) {
+					layer.msg('配置保存成功', {icon: 1, time: 2000});
+					console.log('配置保存成功:', response);
+
+					// 重新加载配置以确保同步
+					setTimeout(function() {
+						loadParseConfig();
+					}, 1000);
+				} else {
+					var errorMsg = '保存失败: ';
+					if (response && response.message) {
+						errorMsg += response.message;
+					} else if (response && response.code) {
+						errorMsg += '服务器返回错误代码: ' + response.code;
+					} else {
+						errorMsg += '未知错误 (响应格式异常)';
+					}
+
+					layer.msg(errorMsg, {icon: 2, time: 4000});
+					console.error('配置保存失败:', response);
+				}
+			},
+			error: function(xhr, status, error) {
+				console.error('AJAX请求失败:', {
+					status: status,
+					error: error,
+					xhr: xhr,
+					responseText: xhr.responseText,
+					readyState: xhr.readyState
+				});
+
+				layer.closeAll('loading');
+				var errorMsg = '保存失败: ';
+
+				if (status === 'timeout') {
+					errorMsg += '请求超时 (15秒)';
+				} else if (xhr.status === 0) {
+					errorMsg += '网络连接失败或被阻止';
+				} else if (xhr.status === 404) {
+					errorMsg += '接口不存在 (404)';
+				} else if (xhr.status === 500) {
+					errorMsg += '服务器内部错误 (500)';
+				} else if (xhr.status === 403) {
+					errorMsg += '访问被拒绝 (403)';
+				} else {
+					errorMsg += '网络错误 (' + xhr.status + ')';
+				}
+
+				// 如果有响应内容，尝试解析
+				if (xhr.responseText) {
+					try {
+						var errorResponse = JSON.parse(xhr.responseText);
+						if (errorResponse.message) {
+							errorMsg += ' - ' + errorResponse.message;
+						}
+					} catch (e) {
+						console.log('无法解析错误响应:', xhr.responseText);
+					}
+				}
+
+				layer.msg(errorMsg, {icon: 2, time: 4000});
+			}
+		});
+
+	} catch (error) {
+		layer.closeAll('loading');
+		layer.msg('保存配置时发生错误: ' + error.message, {icon: 2});
+		console.error('保存配置异常:', error);
+	}
 }
 
 // 格式化文件大小
@@ -1076,6 +1393,7 @@ function formatFileSize(bytes) {
 	var i = Math.floor(Math.log(bytes) / Math.log(k));
 	return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
+});
 </script>
 
 </body>

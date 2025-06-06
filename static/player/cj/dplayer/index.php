@@ -1,4 +1,11 @@
 <?php
+// 强制清除OpCache缓存
+if (function_exists('opcache_reset')) {
+    opcache_reset();
+}
+if (function_exists('opcache_invalidate')) {
+    opcache_invalidate(__FILE__, true);
+}
 
 require_once 'save/config.php';
 require_once('init.php');
@@ -76,14 +83,48 @@ if ($_GET['ac'] == "parse") {
 
 // 解析统计接口
 if ($_GET['ac'] == "parse_stats") {
-    $parser = new VideoParser();
-    $stats = $parser->getStats();
+    try {
+        $parser = new VideoParser();
+        $stats = $parser->getStats();
 
-    $json = [
-        'code' => 1,
-        'message' => '获取统计信息成功',
-        'data' => $stats
-    ];
+        $json = [
+            'code' => 1,
+            'message' => '获取统计信息成功',
+            'data' => $stats
+        ];
+    } catch (Exception $e) {
+        // 如果VideoParser初始化失败，返回默认配置
+        $json = [
+            'code' => 1,
+            'message' => '使用默认配置',
+            'data' => [
+                'cache_count' => 0,
+                'log_size' => 0,
+                'config' => [
+                    'enable' => false,
+                    'timeout' => 30,
+                    'retry_count' => 3,
+                    'cache_time' => 3600,
+                    'log_level' => 'info',
+                    'apis' => [
+                        'https://jiexi.789jiexi.net:4433/?url=',
+                        'https://jx.jsonplayer.com/player/?url=',
+                        'https://jx.parwix.com:4433/player/?url=',
+                        'https://jx.blbo.cc:4433/?url='
+                    ],
+                    'vip_domains' => [
+                        'v.qq.com',
+                        'www.iqiyi.com',
+                        'v.youku.com',
+                        'www.mgtv.com',
+                        'tv.sohu.com',
+                        'www.le.com',
+                        'www.bilibili.com'
+                    ]
+                ]
+            ]
+        ];
+    }
     die(json_encode($json));
 }
 
@@ -100,13 +141,168 @@ if ($_GET['ac'] == "clear_parse_cache") {
     die(json_encode($json));
 }
 
+// 简化测试接口
+if (isset($_GET['ac']) && $_GET['ac'] == "test_save") {
+    header('Content-Type: application/json');
+    $json = [
+        'code' => 1,
+        'message' => '测试接口工作正常',
+        'data' => [
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => $_SERVER['REQUEST_METHOD'],
+            'get_params' => $_GET
+        ]
+    ];
+    die(json_encode($json));
+}
+
+// 保存解析配置接口 - 必须在其他处理逻辑之前
+if (isset($_GET['ac']) && $_GET['ac'] == "save_config") {
+    // 立即返回明确的响应，确保代码被执行
+    header('Content-Type: application/json');
+
+    // 立即输出一个明确的响应来确认代码被执行
+    $debug_response = [
+        'code' => 999,
+        'message' => '进入save_config接口 - 代码正在执行',
+        'debug' => [
+            'timestamp' => date('Y-m-d H:i:s'),
+            'method' => $_SERVER['REQUEST_METHOD'],
+            'uri' => $_SERVER['REQUEST_URI'],
+            'get_params' => $_GET
+        ]
+    ];
+
+    // 记录调试信息
+    error_log('[VIP解析配置保存] ===== 进入save_config接口 ===== ' . date('Y-m-d H:i:s'));
+    error_log('[VIP解析配置保存] 接收到保存请求');
+    error_log('[VIP解析配置保存] 请求方法: ' . $_SERVER['REQUEST_METHOD']);
+    error_log('[VIP解析配置保存] 请求URI: ' . $_SERVER['REQUEST_URI']);
+    error_log('[VIP解析配置保存] GET参数: ' . print_r($_GET, true));
+
+    // 只允许POST请求
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $json = [
+            'code' => -1,
+            'message' => '只允许POST请求，当前请求方法: ' . $_SERVER['REQUEST_METHOD'],
+            'data' => null
+        ];
+        error_log('[VIP解析配置保存] 错误: 请求方法不正确');
+        die(json_encode($json));
+    }
+
+    // 获取POST数据
+    $input = file_get_contents('php://input');
+    error_log('[VIP解析配置保存] 接收到的原始数据: ' . $input);
+
+    if (empty($input)) {
+        $json = [
+            'code' => -1,
+            'message' => '请求数据为空',
+            'data' => null
+        ];
+        error_log('[VIP解析配置保存] 错误: 请求数据为空');
+        die(json_encode($json));
+    }
+
+    $config_data = json_decode($input, true);
+    $json_error = json_last_error();
+
+    if ($json_error !== JSON_ERROR_NONE) {
+        $error_messages = [
+            JSON_ERROR_DEPTH => '超过最大堆栈深度',
+            JSON_ERROR_STATE_MISMATCH => '状态不匹配或无效JSON',
+            JSON_ERROR_CTRL_CHAR => '控制字符错误',
+            JSON_ERROR_SYNTAX => 'JSON语法错误',
+            JSON_ERROR_UTF8 => 'UTF-8字符错误'
+        ];
+
+        $error_msg = isset($error_messages[$json_error]) ? $error_messages[$json_error] : '未知JSON错误';
+
+        $json = [
+            'code' => -1,
+            'message' => 'JSON数据格式错误: ' . $error_msg,
+            'data' => null
+        ];
+        error_log('[VIP解析配置保存] JSON解析错误: ' . $error_msg);
+        die(json_encode($json));
+    }
+
+    error_log('[VIP解析配置保存] 解析后的数据: ' . print_r($config_data, true));
+
+    if (!isset($config_data['config']) || !is_array($config_data['config'])) {
+        $json = [
+            'code' => -1,
+            'message' => '缺少配置数据或配置数据格式错误',
+            'data' => [
+                'received_keys' => array_keys($config_data),
+                'config_type' => isset($config_data['config']) ? gettype($config_data['config']) : 'not_set'
+            ]
+        ];
+        error_log('[VIP解析配置保存] 错误: 配置数据格式错误');
+        die(json_encode($json));
+    }
+
+    try {
+        error_log('[VIP解析配置保存] 开始创建VideoParser实例');
+
+        // 检查VideoParser类是否存在
+        if (!class_exists('VideoParser')) {
+            $json = [
+                'code' => -1,
+                'message' => 'VideoParser类不存在，请检查parse.class.php文件',
+                'data' => null
+            ];
+            error_log('[VIP解析配置保存] 错误: VideoParser类不存在');
+            die(json_encode($json));
+        }
+
+        $parser = new VideoParser();
+        error_log('[VIP解析配置保存] VideoParser实例创建成功');
+
+        $result = $parser->saveConfig($config_data['config']);
+        error_log('[VIP解析配置保存] saveConfig方法执行结果: ' . print_r($result, true));
+
+        $json = [
+            'code' => $result['success'] ? 1 : -1,
+            'message' => $result['message'],
+            'data' => $result['success'] ? $config_data['config'] : null
+        ];
+
+        error_log('[VIP解析配置保存] 最终响应: ' . json_encode($json));
+
+    } catch (Exception $e) {
+        $error_msg = '保存配置时发生异常: ' . $e->getMessage();
+        $json = [
+            'code' => -1,
+            'message' => $error_msg,
+            'data' => [
+                'exception_file' => $e->getFile(),
+                'exception_line' => $e->getLine(),
+                'exception_trace' => $e->getTraceAsString()
+            ]
+        ];
+        error_log('[VIP解析配置保存] 异常: ' . $error_msg);
+        error_log('[VIP解析配置保存] 异常详情: ' . $e->getTraceAsString());
+    }
+
+    // 如果到达这里，说明没有错误，返回正常响应
+    if (!isset($json)) {
+        $json = $debug_response; // 使用调试响应
+    }
+
+    die(json_encode($json));
+}
+
 $d = new danmu();
 if ($_GET['ac'] == "edit") {
     $cid = $_POST['cid'] ?: showmessage(-1, null);
     $data = $d->编辑弹幕($cid) ?:  succeedmsg(0, '完成');
     exit;
 }
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+// 重要：POST请求的通用处理必须排除save_config接口
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['ac']) || $_GET['ac'] !== 'save_config')) {
     $d_data = json_decode(file_get_contents('php://input'), true);
     // 限制发送频率
     $lock = 1;

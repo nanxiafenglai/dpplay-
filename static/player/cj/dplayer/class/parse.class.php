@@ -378,14 +378,246 @@ class VideoParser
     {
         $cache_files = glob($this->cache_dir . '*.json');
         $cleared = 0;
-        
+
         foreach ($cache_files as $file) {
             if (@unlink($file)) {
                 $cleared++;
             }
         }
-        
+
         $this->log('info', "清理缓存完成，删除 {$cleared} 个文件");
         return $cleared > 0;
+    }
+
+    /**
+     * 保存配置到文件
+     * @param array $config 配置数组
+     * @return array 保存结果
+     */
+    public function saveConfig($config)
+    {
+        try {
+            // 验证配置数据
+            $validation_result = $this->validateConfig($config);
+            if (!$validation_result['valid']) {
+                return [
+                    'success' => false,
+                    'message' => '配置验证失败: ' . $validation_result['error']
+                ];
+            }
+
+            // 备份当前配置
+            $backup_result = $this->backupConfig();
+            if (!$backup_result['success']) {
+                $this->log('warning', '配置备份失败: ' . $backup_result['message']);
+            }
+
+            // 读取当前完整配置文件
+            $config_file = __DIR__ . '/../save/config.inc.php';
+            if (!file_exists($config_file)) {
+                return [
+                    'success' => false,
+                    'message' => '配置文件不存在'
+                ];
+            }
+
+            $current_config = include $config_file;
+            if (!is_array($current_config)) {
+                return [
+                    'success' => false,
+                    'message' => '配置文件格式错误'
+                ];
+            }
+
+            // 更新解析接口配置
+            $current_config['解析接口'] = $config;
+
+            // 生成新的配置文件内容
+            $config_content = "<?php \nreturn " . $this->arrayToPhpString($current_config) . ";\n";
+
+            // 写入配置文件
+            $write_result = @file_put_contents($config_file, $config_content, LOCK_EX);
+
+            if ($write_result === false) {
+                return [
+                    'success' => false,
+                    'message' => '配置文件写入失败，请检查文件权限'
+                ];
+            }
+
+            // 更新内存中的配置
+            $this->config = $config;
+
+            $this->log('info', '配置保存成功');
+
+            return [
+                'success' => true,
+                'message' => '配置保存成功'
+            ];
+
+        } catch (Exception $e) {
+            $this->log('error', '保存配置时发生异常: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => '保存配置时发生异常: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * 验证配置数据有效性
+     * @param array $config 配置数组
+     * @return array 验证结果
+     */
+    private function validateConfig($config)
+    {
+        // 检查必需字段
+        $required_fields = ['enable', 'timeout', 'retry_count', 'cache_time', 'log_level', 'apis', 'vip_domains'];
+
+        foreach ($required_fields as $field) {
+            if (!isset($config[$field])) {
+                return [
+                    'valid' => false,
+                    'error' => "缺少必需字段: $field"
+                ];
+            }
+        }
+
+        // 验证数据类型和范围
+        if (!is_bool($config['enable'])) {
+            return [
+                'valid' => false,
+                'error' => 'enable字段必须是布尔值'
+            ];
+        }
+
+        if (!is_int($config['timeout']) || $config['timeout'] < 5 || $config['timeout'] > 300) {
+            return [
+                'valid' => false,
+                'error' => 'timeout字段必须是5-300之间的整数'
+            ];
+        }
+
+        if (!is_int($config['retry_count']) || $config['retry_count'] < 0 || $config['retry_count'] > 10) {
+            return [
+                'valid' => false,
+                'error' => 'retry_count字段必须是0-10之间的整数'
+            ];
+        }
+
+        if (!is_int($config['cache_time']) || $config['cache_time'] < 0) {
+            return [
+                'valid' => false,
+                'error' => 'cache_time字段必须是非负整数'
+            ];
+        }
+
+        if (!in_array($config['log_level'], ['debug', 'info', 'warning', 'error'])) {
+            return [
+                'valid' => false,
+                'error' => 'log_level字段必须是debug、info、warning或error之一'
+            ];
+        }
+
+        if (!is_array($config['apis'])) {
+            return [
+                'valid' => false,
+                'error' => 'apis字段必须是数组'
+            ];
+        }
+
+        if (!is_array($config['vip_domains'])) {
+            return [
+                'valid' => false,
+                'error' => 'vip_domains字段必须是数组'
+            ];
+        }
+
+        // 验证API URL格式
+        foreach ($config['apis'] as $api) {
+            if (!is_string($api) || !filter_var($api, FILTER_VALIDATE_URL)) {
+                return [
+                    'valid' => false,
+                    'error' => "无效的API URL: $api"
+                ];
+            }
+        }
+
+        return [
+            'valid' => true,
+            'error' => null
+        ];
+    }
+
+    /**
+     * 备份当前配置文件
+     * @return array 备份结果
+     */
+    private function backupConfig()
+    {
+        try {
+            $config_file = __DIR__ . '/../save/config.inc.php';
+            $backup_file = __DIR__ . '/../save/config.inc.php.backup.' . date('Y-m-d-H-i-s');
+
+            if (!file_exists($config_file)) {
+                return [
+                    'success' => false,
+                    'message' => '原配置文件不存在'
+                ];
+            }
+
+            $copy_result = @copy($config_file, $backup_file);
+
+            if (!$copy_result) {
+                return [
+                    'success' => false,
+                    'message' => '备份文件创建失败'
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => '配置备份成功'
+            ];
+
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => '备份过程中发生异常: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * 将数组转换为PHP代码字符串
+     * @param array $array 要转换的数组
+     * @param int $indent 缩进级别
+     * @return string PHP代码字符串
+     */
+    private function arrayToPhpString($array, $indent = 1)
+    {
+        $result = "[\n";
+        $indent_str = str_repeat('    ', $indent);
+
+        foreach ($array as $key => $value) {
+            $result .= $indent_str . "'" . addslashes($key) . "' => ";
+
+            if (is_array($value)) {
+                $result .= $this->arrayToPhpString($value, $indent + 1);
+            } elseif (is_bool($value)) {
+                $result .= $value ? 'true' : 'false';
+            } elseif (is_int($value)) {
+                $result .= $value;
+            } elseif (is_string($value)) {
+                $result .= "'" . addslashes($value) . "'";
+            } else {
+                $result .= "'" . addslashes((string)$value) . "'";
+            }
+
+            $result .= ",\n";
+        }
+
+        $result .= str_repeat('    ', $indent - 1) . "]";
+        return $result;
     }
 }
